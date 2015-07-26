@@ -1,0 +1,9 @@
+[package]
+name = "mesh"
+version = "0.1.0"
+authors = ["Trip Volpe <trip.volpe@gmail.com>"]
+
+[dependencies]
+docopt = "0.6.67"
+docopt_macros = "0.6.67"
+rustc-serialize = "*"
