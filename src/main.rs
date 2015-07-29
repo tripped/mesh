@@ -32,7 +32,7 @@ fn main() {
         if port == 0 { thread_rng().gen_range(1024, 32768) } else { port }
     };
 
-    println!("Listening on on {}:{}", host, port);
+    println!("Listening on {}:{}", host, port);
 
     let socket = UdpSocket::bind((host, port)).unwrap();
 
