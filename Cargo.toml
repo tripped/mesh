@@ -7,3 +7,4 @@ authors = ["Trip Volpe <trip.volpe@gmail.com>"]
 docopt = "0.6.67"
 docopt_macros = "0.6.67"
 rustc-serialize = "*"
+rand = "*"

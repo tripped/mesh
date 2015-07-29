@@ -3,6 +3,7 @@
 
 extern crate docopt;
 extern crate rustc_serialize;
+extern crate rand;
 
 docopt!(Args derive Debug, "
 Usage:
@@ -10,18 +11,28 @@ Usage:
     mesh [options] TARGET MESSAGE
 
 Options:
-    -h, --host HOST  Host to listen on. [default: 0.0.0.0]
-    -p, --port PORT  Local port to bind to. [default: 1337]
+    -h, --host HOST  Host to listen on. [default: 127.0.0.1]
+    -p, --port PORT  Local port to bind to. [default: 0]
+
+When run with TARGET and MESSAGE, send specified message to a listening mesh.
+Otherwise, begin listening on the specified host and port.
 ",
     flag_host: String,
     flag_port: u16);
 
 fn main() {
     use std::net::UdpSocket;
+    use rand::{thread_rng, Rng};
 
     let args: Args = Args::docopt().decode().unwrap_or_else(|e| e.exit());
     let (host, port) = (&args.flag_host[..], args.flag_port);
     let (target, message) = (&args.arg_TARGET[..], args.arg_MESSAGE);
+
+    let port = {
+        if port == 0 { thread_rng().gen_range(1024, 32768) } else { port }
+    };
+
+    println!("Listening on on {}:{}", host, port);
 
     let mut socket = UdpSocket::bind((host, port)).unwrap();
 
