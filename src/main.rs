@@ -34,10 +34,10 @@ fn main() {
 
     println!("Listening on on {}:{}", host, port);
 
-    let mut socket = UdpSocket::bind((host, port)).unwrap();
+    let socket = UdpSocket::bind((host, port)).unwrap();
 
     if target.len() > 0 {
-        socket.send_to(message.as_bytes(), target);
+        socket.send_to(message.as_bytes(), target).ok();
     }
 
     // Receive a response
@@ -50,7 +50,7 @@ fn main() {
     }
 
     buf.reverse();
-    socket.send_to(buf, &src);
+    socket.send_to(buf, &src).ok();
 
     drop(socket);
 }
