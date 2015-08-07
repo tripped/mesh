@@ -2,8 +2,12 @@
 #![plugin(docopt_macros)]
 
 extern crate docopt;
+extern crate bincode;
 extern crate rustc_serialize;
 extern crate rand;
+
+use rustc_serialize::{Encodable, Decodable};
+use std::net::ToSocketAddrs;
 
 docopt!(Args derive Debug, "
 Usage:
@@ -19,6 +23,31 @@ Otherwise, begin listening on the specified host and port.
 ",
     flag_host: String,
     flag_port: u16);
+
+#[derive(RustcEncodable, RustcDecodable)]
+enum Message {
+    Join { seq: u32 },
+}
+
+impl Message {
+    fn encode(&self) -> Vec<u8> {
+        bincode::encode(self, bincode::SizeLimit::Infinite).unwrap()
+    }
+    fn decode(bytes: &[u8]) -> Message {
+        bincode::decode::<Message>(bytes).unwrap()
+    }
+}
+
+#[test]
+fn join_message_is_recodable() {
+    let m = Message::Join { seq: 100 };
+    let bytes = m.encode();
+    let m = Message::decode(&bytes);
+
+    match Message::decode(&bytes) {
+        Message::Join { seq: seq } => assert_eq!(seq, 100),
+    }
+}
 
 fn main() {
     use std::net::UdpSocket;
