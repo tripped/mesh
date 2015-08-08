@@ -7,18 +7,18 @@ extern crate rustc_serialize;
 extern crate rand;
 
 use rustc_serialize::{Encodable, Decodable};
-use std::net::ToSocketAddrs;
+use std::net::{UdpSocket, ToSocketAddrs, SocketAddr};
 
 docopt!(Args derive Debug, "
 Usage:
     mesh [options]
-    mesh [options] TARGET MESSAGE
+    mesh [options] TARGET
 
 Options:
     -h, --host HOST  Host to listen on. [default: 127.0.0.1]
     -p, --port PORT  Local port to bind to. [default: 0]
 
-When run with TARGET and MESSAGE, send specified message to a listening mesh.
+When run with TARGET, attempt to join the specified target mesh.
 Otherwise, begin listening on the specified host and port.
 ",
     flag_host: String,
@@ -49,37 +49,48 @@ fn join_message_is_recodable() {
     }
 }
 
+fn send<A: ToSocketAddrs>(msg: &Message, target: &A, socket: &UdpSocket) {
+    socket.send_to(&msg.encode(), target).ok();
+}
+
+fn join(seq: u32, joiner: &SocketAddr) {
+    println!("Received a JOIN request {} from {}", seq, joiner);
+}
+
+// Listen on a UDP socket and call appropriate handlers for received messages.
+fn dispatch_forever(socket: &UdpSocket) {
+    loop {
+        // TODO: establish MTU or just use large buffer
+        let mut buf = [0;4096];
+        let (amt, src) = socket.recv_from(&mut buf).unwrap();
+        let buf = &buf[..amt];
+
+        match Message::decode(&buf) {
+            Message::Join {seq} => join(seq, &src)
+        }
+    }
+}
+
 fn main() {
     use std::net::UdpSocket;
     use rand::{thread_rng, Rng};
 
     let args: Args = Args::docopt().decode().unwrap_or_else(|e| e.exit());
     let (host, port) = (&args.flag_host[..], args.flag_port);
-    let (target, message) = (&args.arg_TARGET[..], args.arg_MESSAGE);
+    let target = &args.arg_TARGET[..];
 
     let port = {
         if port == 0 { thread_rng().gen_range(1024, 32768) } else { port }
     };
 
     println!("Listening on {}:{}", host, port);
-
     let socket = UdpSocket::bind((host, port)).unwrap();
 
+    // Send an initial JOIN if TARGET is given
     if target.len() > 0 {
-        socket.send_to(message.as_bytes(), target).ok();
+        send(&Message::Join { seq: 1 }, &target, &socket);
     }
 
-    // Receive a response
-    let mut buf = [0;4096];
-    let (amt, src) = socket.recv_from(&mut buf).unwrap();
-    let buf = &mut buf[..amt];
-    {
-        let s = std::str::from_utf8(buf).ok().unwrap();
-        println!("Received: {}", s);
-    }
-
-    buf.reverse();
-    socket.send_to(buf, &src).ok();
-
+    dispatch_forever(&socket);
     drop(socket);
 }
