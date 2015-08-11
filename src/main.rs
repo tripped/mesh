@@ -36,6 +36,7 @@ enum Message {
     Acked(u32, AckedMessage),
 
     // Other messages don't need the overhead and may just be listed here.
+    Ack(u32),
     Ping(String),
     Pong(String),
 }
@@ -86,6 +87,10 @@ fn dispatch_forever(socket: &UdpSocket) {
                 match m {
                     AckedMessage::Join => join(seq, &src)
                 }
+                send(&Message::Ack(seq), &src, &socket);
+            },
+            Message::Ack(seq) => {
+                println!("Received ACK: {}", seq);
             },
             Message::Ping(s) => {
                 println!("Received PING: {}", s);
