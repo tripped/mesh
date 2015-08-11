@@ -24,9 +24,19 @@ Otherwise, begin listening on the specified host and port.
     flag_host: String,
     flag_port: u16);
 
+// Some messages require acknowledgement. These have a special type.
+#[derive(RustcEncodable, RustcDecodable)]
+enum AckedMessage {
+    Join
+}
+
 #[derive(RustcEncodable, RustcDecodable)]
 enum Message {
-    Join { seq: u32 },
+    // Acked messages have a sequence number.
+    Acked(u32, AckedMessage),
+
+    // Other messages don't need the overhead and may just be listed here.
+    Ping(String),
 }
 
 impl Message {
@@ -40,12 +50,17 @@ impl Message {
 
 #[test]
 fn join_message_is_recodable() {
-    let m = Message::Join { seq: 100 };
+    let m = Message::Acked(100, AckedMessage::Join);
     let bytes = m.encode();
-    let m = Message::decode(&bytes);
 
     match Message::decode(&bytes) {
-        Message::Join { seq: seq } => assert_eq!(seq, 100),
+        Message::Acked(seq, m) => {
+            assert_eq!(seq, 100);
+            match m {
+                AckedMessage::Join => (),
+            }
+        },
+        _ => panic!("Decoded into a non-acked message type!!!"),
     }
 }
 
@@ -66,7 +81,12 @@ fn dispatch_forever(socket: &UdpSocket) {
         let buf = &buf[..amt];
 
         match Message::decode(&buf) {
-            Message::Join {seq} => join(seq, &src)
+            Message::Acked(seq, m) => {
+                match m {
+                    AckedMessage::Join => join(seq, &src)
+                }
+            },
+            Message::Ping(s) => println!("Received PING: {}", s),
         }
     }
 }
@@ -88,7 +108,7 @@ fn main() {
 
     // Send an initial JOIN if TARGET is given
     if target.len() > 0 {
-        send(&Message::Join { seq: 1 }, &target, &socket);
+        send(&Message::Acked(1, AckedMessage::Join), &target, &socket);
     }
 
     dispatch_forever(&socket);
