@@ -37,6 +37,7 @@ enum Message {
 
     // Other messages don't need the overhead and may just be listed here.
     Ping(String),
+    Pong(String),
 }
 
 impl Message {
@@ -86,7 +87,13 @@ fn dispatch_forever(socket: &UdpSocket) {
                     AckedMessage::Join => join(seq, &src)
                 }
             },
-            Message::Ping(s) => println!("Received PING: {}", s),
+            Message::Ping(s) => {
+                println!("Received PING: {}", s);
+                send(&Message::Pong("OOH SHINY".to_string()), &src, &socket);
+            },
+            Message::Pong(s) => {
+                println!("Received PONG: {}", s);
+            }
         }
     }
 }
@@ -109,6 +116,7 @@ fn main() {
     // Send an initial JOIN if TARGET is given
     if target.len() > 0 {
         send(&Message::Acked(1, AckedMessage::Join), &target, &socket);
+        send(&Message::Ping("HELLO!!".to_string()), &target, &socket);
     }
 
     dispatch_forever(&socket);
