@@ -6,6 +6,8 @@ extern crate bincode;
 extern crate rustc_serialize;
 extern crate rand;
 
+mod scheduler;
+
 use rustc_serialize::{Encodable, Decodable};
 use std::net::{UdpSocket, ToSocketAddrs, SocketAddr};
 
