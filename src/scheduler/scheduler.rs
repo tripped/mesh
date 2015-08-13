@@ -6,12 +6,19 @@ use std::collections::BinaryHeap;
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-struct Event {
+struct Event<F> {
     time: u64,
-    //cb: Arc<Mutex<Fn() -> ()>>,
+    cb: F,
 }
 
-impl Event {
+impl<F> Event<F> {
+    fn new(time: u64, cb: F) -> Event<F> {
+        Event {
+            time: time,
+            cb: cb
+        }
+    }
+
     fn fire(&self, actual: u64) {
         let drift = actual - self.time;
         println!("Event {} fired at {} => lag {}ns",
@@ -21,22 +28,22 @@ impl Event {
 
 // Events are ordered in reverse according to their scheduled time,
 // hence we implement Ord and PartialOrd reversing the sense of cmp.
-impl Ord for Event {
-    fn cmp(&self, other: &Event) -> Ordering {
+impl<F> Ord for Event<F> {
+    fn cmp(&self, other: &Event<F>) -> Ordering {
         other.time.cmp(&self.time)
     }
 }
 
-impl PartialOrd for Event {
-    fn partial_cmp(&self, other: &Event) -> Option<Ordering> {
+impl<F> PartialOrd for Event<F> {
+    fn partial_cmp(&self, other: &Event<F>) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
 // We must also implement Eq, though this is strictly nonsense.
-impl Eq for Event { }
-impl PartialEq for Event {
-    fn eq(&self, other: &Event) -> bool {
+impl<F> Eq for Event<F> { }
+impl<F> PartialEq for Event<F> {
+    fn eq(&self, other: &Event<F>) -> bool {
         &self.time == &other.time
     }
 }
@@ -49,19 +56,19 @@ fn event_cmp() {
     // max-heap based on the contents' PartialOrd implementation.
     // This seems unhelpfully rigid (what if we want both a max-heap
     // AND a min-heap for the same type?), but c'est la vie.
-    assert!(Event { time: 1 } > Event { time: 2 });
+    assert!(Event::new(1, ()) > Event::new(2, ()));
 }
 
 // A timer controls the scheduling of events based on the passage of time.
 // Time here is a unitless 64-bit int, which it may be useful to interpret
 // as milliseconds or nanoseconds.
-struct Timer {
-    events: BinaryHeap<Event>,
+struct Timer<F> {
+    events: BinaryHeap<Event<F>>,
     elapsed: u64,
 }
 
-impl Timer {
-    fn new() -> Timer {
+impl<F> Timer<F> {
+    fn new() -> Timer<F> {
         Timer {
             events: BinaryHeap::new(),
             elapsed: 0
@@ -69,11 +76,8 @@ impl Timer {
     }
 
     // Schedule an event in the timer.
-    fn add<F>(&mut self, delay: u64, cb: F)
-        where F: Fn() -> () {
-        self.events.push(Event {
-            time: delay + self.elapsed
-        });
+    fn add(&mut self, delay: u64, cb: F) {
+        self.events.push(Event::new(delay + self.elapsed, cb));
     }
 
     // Get the time remaining to the earliest pending event,
@@ -96,30 +100,30 @@ impl Timer {
 
 #[test]
 fn timer_earliest_no_events() {
-    let t = Timer::new();
+    let t = Timer::<()>::new();
     assert_eq!(t.earliest(), None);
 }
 
 #[test]
 fn timer_earliest_one() {
     let mut t = Timer::new();
-    t.add(100, || {});
+    t.add(100, ());
     assert_eq!(t.earliest(), Some(100));
 }
 
 #[test]
 fn timer_earliest_orders_correctly() {
     let mut t = Timer::new();
-    t.add(100, || {});
-    t.add(10, || {});
-    t.add(50, || {});
+    t.add(100, ());
+    t.add(10, ());
+    t.add(50, ());
     assert_eq!(t.earliest(), Some(10));
 }
 
 #[test]
 fn timer_earliest_updates_after_advance() {
     let mut t = Timer::new();
-    t.add(100, || {});
+    t.add(100, ());
     t.advance(58);
     assert_eq!(t.earliest(), Some(42));
 }
@@ -127,9 +131,9 @@ fn timer_earliest_updates_after_advance() {
 #[test]
 fn timer_advance_pops_events() {
     let mut t = Timer::new();
-    t.add(2, || {});
-    t.add(3, || {});
-    t.add(1, || {});
+    t.add(2, ());
+    t.add(3, ());
+    t.add(1, ());
     for n in 1..4 {
         // NB: delta to next earliest is 1 each time
         assert_eq!(t.earliest(), Some(1));
@@ -141,12 +145,12 @@ fn timer_advance_pops_events() {
 #[test]
 fn timer_advance_pops_multiple() {
     let mut t = Timer::new();
-    t.add(1, || {});
-    t.add(2, || {});
-    t.add(3, || {});
-    t.add(10, || {});
-    t.add(10, || {});
-    t.add(14, || {});
+    t.add(1, ());
+    t.add(2, ());
+    t.add(3, ());
+    t.add(10, ());
+    t.add(10, ());
+    t.add(14, ());
     t.advance(10);
     assert_eq!(t.earliest(), Some(4));
 }
@@ -155,18 +159,18 @@ fn timer_advance_pops_multiple() {
 fn timer_add_after_advance() {
     let mut t = Timer::new();
     t.advance(1000);
-    t.add(1, || {});
+    t.add(1, ());
     assert_eq!(t.earliest(), Some(1));
 }
 
 pub struct Scheduler {
-    timer: Arc<Mutex<Timer>>,
+    timer: Arc<Mutex<Timer<()>>>,
     timer_thread: thread::JoinHandle<()>,
 }
 
 impl Scheduler {
     fn new() -> Scheduler {
-        let timer: Arc<Mutex<Timer>>
+        let timer: Arc<Mutex<Timer<()>>>
             = Arc::new(Mutex::new(Timer::new()));
 
         let timer_thread = {
@@ -201,8 +205,7 @@ impl Scheduler {
 
     // Schedule the execution of a nullary closure returning unit
     // after a specified time period in milliseconds.
-    fn delay<F>(&mut self, millis: u64, func: F)
-        where F: Fn() -> () {
+    fn delay(&mut self, millis: u64, func: ()) {
         let mut timer = self.timer.lock().unwrap();
         timer.add(millis * 1000000, func);
         self.timer_thread.thread().unpark();
@@ -217,9 +220,9 @@ impl Scheduler {
 #[test]
 fn crappy_threaded_scheduler_test() {
     let mut s = Scheduler::new();
-    s.delay(949, || {});
-    s.delay(1001, || {});
-    s.delay(500, || {});
-    s.delay(200, || {});
+    s.delay(949, ());
+    s.delay(1001, ());
+    s.delay(500, ());
+    s.delay(200, ());
     s.run();
 }
