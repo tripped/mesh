@@ -86,15 +86,16 @@ impl<F> Timer<F> {
         self.events.peek().map(|e| e.time - self.elapsed)
     }
 
-    // Advance time by a specified duration, firing all scheduled
+    // Advance time by a specified duration, expiring all scheduled
     // events whose timeout period has now elapsed.
-    // Return the time remaining to the next event, if any.
-    fn advance(&mut self, elapsed: u64) -> Option<u64> {
+    // Return a Vec containing the expired items.
+    fn advance(&mut self, elapsed: u64) -> Vec<F> {
         self.elapsed += elapsed;
+        let mut result = Vec::new();
         while self.events.peek().map_or(false, |e| e.time <= self.elapsed) {
-            self.events.pop().unwrap().fire(self.elapsed);
+            result.push(self.events.pop().unwrap().cb);
         }
-        self.earliest()
+        result
     }
 }
 
@@ -131,13 +132,14 @@ fn timer_earliest_updates_after_advance() {
 #[test]
 fn timer_advance_pops_events() {
     let mut t = Timer::new();
-    t.add(2, ());
-    t.add(3, ());
-    t.add(1, ());
-    for n in 1..4 {
+    t.add(2, "second");
+    t.add(3, "third");
+    t.add(1, "first");
+
+    for n in vec!["first", "second", "third"] {
         // NB: delta to next earliest is 1 each time
         assert_eq!(t.earliest(), Some(1));
-        t.advance(1);
+        assert_eq!(t.advance(1), vec![n]);
     }
     assert_eq!(t.earliest(), None);
 }
@@ -145,13 +147,13 @@ fn timer_advance_pops_events() {
 #[test]
 fn timer_advance_pops_multiple() {
     let mut t = Timer::new();
-    t.add(1, ());
-    t.add(2, ());
-    t.add(3, ());
-    t.add(10, ());
-    t.add(10, ());
-    t.add(14, ());
-    t.advance(10);
+    t.add(1, 1);
+    t.add(2, 2);
+    t.add(3, 3);
+    t.add(10, 5);
+    t.add(10, 5);
+    t.add(14, 6);
+    assert_eq!(t.advance(10), vec![1, 2, 3, 5, 5]);
     assert_eq!(t.earliest(), Some(4));
 }
 
@@ -192,7 +194,8 @@ impl Scheduler {
 
                     // Advance the timer and decide how long to wait again
                     let mut timer = timer.lock().unwrap();
-                    wait = timer.advance(elapsed);
+                    timer.advance(elapsed);
+                    wait = timer.earliest();
                 }
             })
         };
@@ -217,6 +220,7 @@ impl Scheduler {
     }
 }
 
+/*
 #[test]
 fn crappy_threaded_scheduler_test() {
     let mut s = Scheduler::new();
@@ -226,3 +230,4 @@ fn crappy_threaded_scheduler_test() {
     s.delay(200, ());
     s.run();
 }
+*/
