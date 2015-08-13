@@ -76,19 +76,21 @@ impl Timer {
         });
     }
 
-    // Advance time by a specified duration, firing all scheduled
-    // events whose timeout period has now elapsed.
-    fn advance(&mut self, elapsed: u64) {
-        self.elapsed += elapsed;
-        while self.events.peek().map_or(false, |e| e.time <= self.elapsed) {
-            self.events.pop().unwrap().fire(self.elapsed);
-        }
-    }
-
     // Get the time remaining to the earliest pending event,
     // if there is one; None otherwise.
     fn earliest(&self) -> Option<u64> {
         self.events.peek().map(|e| e.time - self.elapsed)
+    }
+
+    // Advance time by a specified duration, firing all scheduled
+    // events whose timeout period has now elapsed.
+    // Return the time remaining to the next event, if any.
+    fn advance(&mut self, elapsed: u64) -> Option<u64> {
+        self.elapsed += elapsed;
+        while self.events.peek().map_or(false, |e| e.time <= self.elapsed) {
+            self.events.pop().unwrap().fire(self.elapsed);
+        }
+        self.earliest()
     }
 }
 
@@ -186,8 +188,7 @@ impl Scheduler {
 
                     // Advance the timer and decide how long to wait again
                     let mut timer = timer.lock().unwrap();
-                    timer.advance(elapsed);
-                    wait = timer.earliest();
+                    wait = timer.advance(elapsed);
                 }
             })
         };
