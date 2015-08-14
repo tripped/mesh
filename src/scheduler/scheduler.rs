@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::sync::mpsc::{channel, Receiver};
 
 struct Event<F> {
     time: u64,
@@ -168,12 +169,15 @@ fn timer_add_after_advance() {
 pub struct Scheduler {
     timer: Arc<Mutex<Timer<Box<Fn() + Send + 'static>>>>,
     timer_thread: thread::JoinHandle<()>,
+    receiver: Receiver<Box<Fn() + Send + 'static>>,
 }
 
 impl Scheduler {
     fn new() -> Scheduler {
         let timer: Arc<Mutex<Timer<Box<Fn() + Send + 'static>>>>
             = Arc::new(Mutex::new(Timer::new()));
+
+        let (tx, rx) = channel::<Box<Fn() + Send + 'static>>();
 
         let timer_thread = {
             let timer = timer.clone();
@@ -196,7 +200,7 @@ impl Scheduler {
                     let mut timer = timer.lock().unwrap();
                     let cbs = timer.advance(elapsed);
                     for f in cbs {
-                        f();
+                        tx.send(f).unwrap();
                     }
                     wait = timer.earliest();
                 }
@@ -206,6 +210,7 @@ impl Scheduler {
         Scheduler { 
             timer: timer,
             timer_thread: timer_thread,
+            receiver: rx,
         }
     }
 
@@ -219,8 +224,11 @@ impl Scheduler {
     }
 
     // Run the scheduler loop forever. FOREEEEVER.
-    fn run(self) {
-        self.timer_thread.join();
+    fn run(&mut self) {
+        loop {
+            let f = self.receiver.recv().unwrap();
+            f();
+        }
     }
 }
 
