@@ -166,13 +166,13 @@ fn timer_add_after_advance() {
 }
 
 pub struct Scheduler {
-    timer: Arc<Mutex<Timer<()>>>,
+    timer: Arc<Mutex<Timer<Box<Fn() + Send + 'static>>>>,
     timer_thread: thread::JoinHandle<()>,
 }
 
 impl Scheduler {
     fn new() -> Scheduler {
-        let timer: Arc<Mutex<Timer<()>>>
+        let timer: Arc<Mutex<Timer<Box<Fn() + Send + 'static>>>>
             = Arc::new(Mutex::new(Timer::new()));
 
         let timer_thread = {
@@ -194,7 +194,10 @@ impl Scheduler {
 
                     // Advance the timer and decide how long to wait again
                     let mut timer = timer.lock().unwrap();
-                    timer.advance(elapsed);
+                    let cbs = timer.advance(elapsed);
+                    for f in cbs {
+                        f();
+                    }
                     wait = timer.earliest();
                 }
             })
@@ -208,9 +211,10 @@ impl Scheduler {
 
     // Schedule the execution of a nullary closure returning unit
     // after a specified time period in milliseconds.
-    fn delay(&mut self, millis: u64, func: ()) {
+    fn delay<F>(&mut self, millis: u64, func: F)
+        where F: Fn() + Send + 'static {
         let mut timer = self.timer.lock().unwrap();
-        timer.add(millis * 1000000, func);
+        timer.add(millis * 1000000, Box::new(func));
         self.timer_thread.thread().unpark();
     }
 
@@ -220,14 +224,14 @@ impl Scheduler {
     }
 }
 
-/*
 #[test]
 fn crappy_threaded_scheduler_test() {
     let mut s = Scheduler::new();
-    s.delay(949, ());
-    s.delay(1001, ());
-    s.delay(500, ());
-    s.delay(200, ());
+
+    s.delay(949, move || {
+        println!("Hello, world!!!");
+        //s.delay(1000, || { println!("Oops!"); });
+    });
+
     s.run();
 }
-*/
