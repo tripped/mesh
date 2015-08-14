@@ -167,17 +167,19 @@ fn timer_add_after_advance() {
 }
 
 pub struct Scheduler {
-    timer: Arc<Mutex<Timer<Box<Fn() + Send + 'static>>>>,
+    timer: Arc<Mutex<Timer<Box<TimerCB>>>>,
     timer_thread: thread::JoinHandle<()>,
-    receiver: Receiver<Box<Fn() + Send + 'static>>,
+    receiver: Receiver<Box<TimerCB>>,
 }
+
+type TimerCB = Fn(&mut Scheduler) + Send + 'static;
 
 impl Scheduler {
     fn new() -> Scheduler {
-        let timer: Arc<Mutex<Timer<Box<Fn() + Send + 'static>>>>
+        let timer: Arc<Mutex<Timer<Box<TimerCB>>>>
             = Arc::new(Mutex::new(Timer::new()));
 
-        let (tx, rx) = channel::<Box<Fn() + Send + 'static>>();
+        let (tx, rx) = channel::<Box<TimerCB>>();
 
         let timer_thread = {
             let timer = timer.clone();
@@ -214,20 +216,20 @@ impl Scheduler {
         }
     }
 
-    // Schedule the execution of a nullary closure returning unit
-    // after a specified time period in milliseconds.
+    // Schedule the execution of a function after a specified
+    // period of time in milliseconds.
     fn delay<F>(&mut self, millis: u64, func: F)
-        where F: Fn() + Send + 'static {
+            where F: Fn(&mut Scheduler) + Send + 'static {
         let mut timer = self.timer.lock().unwrap();
         timer.add(millis * 1000000, Box::new(func));
         self.timer_thread.thread().unpark();
     }
 
-    // Run the scheduler loop forever. FOREEEEVER.
+    // Run the event loop forever.
     fn run(&mut self) {
         loop {
             let f = self.receiver.recv().unwrap();
-            f();
+            f(self);
         }
     }
 }
@@ -236,10 +238,38 @@ impl Scheduler {
 fn crappy_threaded_scheduler_test() {
     let mut s = Scheduler::new();
 
-    s.delay(949, move || {
+    s.delay(1000, |s| {
         println!("Hello, world!!!");
-        //s.delay(1000, || { println!("Oops!"); });
+        s.delay(1000, |s| {
+            println!("A second message!");
+            s.delay(1000, |s| {
+                println!("A fifth message! ...Wait.");
+                s.delay(1000, foo);
+            });
+        });
     });
+
+    fn foo(s: &mut Scheduler) {
+        println!("And, finally, we resort to recursion...");
+        s.delay(1000, foo);
+    }
+
+    s.run();
+}
+
+#[test]
+fn drift_test() {
+    use self::time::PreciseTime;
+
+    let mut s = Scheduler::new();
+    let start = PreciseTime::now();
+
+    for i in 1..10 {
+        s.delay(i * 1000, move |_| {
+            let t = start.to(PreciseTime::now()).num_nanoseconds().unwrap();
+            println!("{}", t);
+        });
+    }
 
     s.run();
 }
