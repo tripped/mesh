@@ -5,7 +5,7 @@ authors = ["Trip Volpe <trip.volpe@gmail.com>"]
 
 [dependencies]
 docopt = "0.6.67"
-docopt_macros = "0.6.67"
+docopt_macros = "0.6.70"
 rustc-serialize = "*"
 rand = "*"
 bincode = "*"
