@@ -232,6 +232,13 @@ impl Scheduler {
             f(self);
         }
     }
+
+    fn run_limit(&mut self, n: u32) {
+        for i in 0..n {
+            let f = self.receiver.recv().unwrap();
+            f(self);
+        }
+    }
 }
 
 #[test]
@@ -244,17 +251,11 @@ fn crappy_threaded_scheduler_test() {
             println!("A second message!");
             s.delay(1000, |s| {
                 println!("A fifth message! ...Wait.");
-                s.delay(1000, foo);
             });
         });
     });
 
-    fn foo(s: &mut Scheduler) {
-        println!("And, finally, we resort to recursion...");
-        s.delay(1000, foo);
-    }
-
-    s.run();
+    s.run_limit(3);
 }
 
 #[test]
@@ -264,12 +265,41 @@ fn drift_test() {
     let mut s = Scheduler::new();
     let start = PreciseTime::now();
 
-    for i in 1..10 {
+    for i in 0..10 {
         s.delay(i * 1000, move |_| {
             let t = start.to(PreciseTime::now()).num_nanoseconds().unwrap();
             println!("{}", t);
         });
     }
 
-    s.run();
+    s.run_limit(10);
+}
+
+#[test]
+fn latency_test() {
+    use self::time::PreciseTime;
+
+    let mut s = Scheduler::new();
+
+    fn latency(s: &mut Scheduler, n: u64) -> u64 {
+
+        let mut delta = Arc::new(Mutex::new(0));
+        let result = delta.clone();
+
+        let start = PreciseTime::now();
+        s.delay(n, move |_| {
+            let t = start.to(PreciseTime::now()).
+                num_nanoseconds().unwrap() as u64;
+            *delta.lock().unwrap() = t;
+        });
+        s.run_limit(1);
+
+        let result = *result.lock().unwrap();
+        result
+    }
+
+    for i in 1..20 {
+        let d = latency(&mut s, 0);
+        println!("Scheduled function ran with latency {} ns", d);
+    }
 }
